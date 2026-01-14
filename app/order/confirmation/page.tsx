@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -8,6 +8,10 @@ import Navbar from '@/components/common/Navbar';
 import Footer from '@/components/common/Footer';
 import Button from '@/components/ui/Button';
 import { generateProposal, downloadProposal, type ProposalData } from '@/lib/utils/proposalGenerator';
+
+// Force dynamic rendering for this page
+export const dynamic = 'force-dynamic';
+
 // Load EmailJS only in the browser to avoid SSR/runtime issues
 
 // Helper to format feature labels
