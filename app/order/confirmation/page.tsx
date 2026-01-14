@@ -3,6 +3,9 @@ import Navbar from '@/components/common/Navbar';
 import Footer from '@/components/common/Footer';
 import OrderConfirmationContent from './OrderConfirmationContent';
 
+// Force dynamic rendering for this page due to useSearchParams
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: 'Order Confirmation - Minto\'s Portfolio',
   description: 'Your order confirmation and proposal',
