@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sendEmail } from '@/lib/email/sendEmail';
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,33 +14,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: name, email, subject, and message are required' }, { status: 400 });
     }
 
-    // Use EmailJS to send email
-    const emailjsResponse = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        service_id: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID,
-        template_id: process.env.NEXT_PUBLIC_EMAILJS_CONTACT_TEMPLATE_ID,
-        user_id: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY,
-        template_params: {
-          from_name: name,
-          from_email: email,
-          phone: phone || 'Not provided',
-          subject: subject,
-          message: message,
-        },
-      }),
+    const adminEmail = process.env.ADMIN_EMAIL_ADDRESS || process.env.ADMIN_EMAIL || 'danielminto13@gmail.com';
+
+    console.log(`[Contact Form] Sending to admin email: ${adminEmail}`);
+
+    const result = await sendEmail(adminEmail, subject, 'contact', {
+      from_name: name,
+      reply_to: email,
+      phone: phone || 'Not provided',
+      message: message,
     });
 
-    if (!emailjsResponse.ok) {
-      const errorText = await emailjsResponse.text();
-      console.error('[Contact Form] EmailJS error:', errorText);
-      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
+    if (!result.success) {
+      console.error('[Contact Form] Email failed:', result.error);
+      return NextResponse.json({ error: result.error || 'Failed to send email' }, { status: 500 });
     }
 
-    console.log('[Contact Form] Email sent successfully via EmailJS');
+    console.log('[Contact Form] Email sent successfully');
     return NextResponse.json({ ok: true, message: 'Email sent successfully' });
   } catch (err: any) {
     console.error('[Contact Form] Error:', err);
