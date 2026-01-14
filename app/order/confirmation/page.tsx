@@ -5,6 +5,7 @@ import OrderConfirmationContent from './OrderConfirmationContent';
 
 // Force dynamic rendering for this page due to useSearchParams
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export const metadata = {
   title: 'Order Confirmation - Minto\'s Portfolio',

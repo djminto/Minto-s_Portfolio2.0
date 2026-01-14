@@ -3,6 +3,7 @@ import ProposalContent from './ProposalContent';
 
 // Force dynamic rendering for this page due to useSearchParams
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export const metadata = {
   title: 'Project Proposal - Minto\'s Portfolio',
