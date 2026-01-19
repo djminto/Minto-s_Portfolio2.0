@@ -55,7 +55,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { status } = await req.json();
+    const body = await req.json();
     const params = await Promise.resolve(context.params);
     const { id } = params;
 
@@ -63,7 +63,7 @@ export async function PUT(
 
     const order = await Order.findByIdAndUpdate(
       id,
-      { status, updatedAt: new Date() },
+      { ...body, updatedAt: new Date() },
       { new: true }
     );
 
@@ -74,6 +74,38 @@ export async function PUT(
     return NextResponse.json(order);
   } catch (error) {
     console.error('Order update error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  context: any
+) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user || (session.user as any).role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const params = await Promise.resolve(context.params);
+    const { id } = params;
+
+    await dbConnect();
+
+    const order = await Order.findByIdAndDelete(id);
+
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ message: 'Order deleted successfully', order });
+  } catch (error) {
+    console.error('Order delete error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -18,19 +18,34 @@ interface Order {
   createdAt: string;
 }
 
+interface Review {
+  _id: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  user: {
+    fullName: string;
+    profilePhoto: string | null;
+  };
+}
+
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<'Pending' | 'In Progress' | 'Completed' | 'All'>('All');
-  const [activeView, setActiveView] = useState<'dashboard' | 'pending' | 'completed'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'pending' | 'completed' | 'reviews'>('dashboard');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Array<{id: string, message: string, time: string, read: boolean}>>([]);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [selectedReviewIds, setSelectedReviewIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -45,6 +60,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (status === 'authenticated' && (session?.user as any)?.role === 'ADMIN') {
       fetchAllOrders();
+      fetchAllReviews();
       generateNotifications();
     }
   }, [status, session]);
@@ -171,9 +187,268 @@ export default function AdminDashboard() {
 
       if (response.ok) {
         setOrders(orders.filter((order) => order._id !== orderId));
+        // Show success toast
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+        successDiv.textContent = '✓ Order deleted successfully';
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+      } else {
+        throw new Error('Failed to delete order');
       }
     } catch (error) {
       console.error('Failed to delete order:', error);
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      errorDiv.textContent = '✗ Failed to delete order';
+      document.body.appendChild(errorDiv);
+      setTimeout(() => errorDiv.remove(), 3000);
+    }
+  };
+
+  const deleteSelectedOrders = async () => {
+    if (selectedOrderIds.length === 0) {
+      alert('Please select orders to delete');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedOrderIds.length} order(s)?`)) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/orders/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: selectedOrderIds }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setOrders(orders.filter((order) => !selectedOrderIds.includes(order._id)));
+        setSelectedOrderIds([]);
+        
+        // Show success toast
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+        successDiv.textContent = `✓ ${data.deletedCount} order(s) deleted successfully`;
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+      } else {
+        throw new Error('Failed to delete orders');
+      }
+    } catch (error) {
+      console.error('Failed to delete orders:', error);
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      errorDiv.textContent = '✗ Failed to delete orders';
+      document.body.appendChild(errorDiv);
+      setTimeout(() => errorDiv.remove(), 3000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const deleteAllOrders = async () => {
+    if (!confirm(`⚠️ WARNING: This will permanently delete ALL ${orders.length} orders! Are you absolutely sure?`)) return;
+    
+    if (!confirm('This action CANNOT be undone. Type "DELETE ALL" to confirm (just click OK to proceed)')) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/orders/bulk-delete', {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setOrders([]);
+        setSelectedOrderIds([]);
+        
+        // Show success toast
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+        successDiv.textContent = `✓ All ${data.deletedCount} orders deleted successfully`;
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+      } else {
+        throw new Error('Failed to delete all orders');
+      }
+    } catch (error) {
+      console.error('Failed to delete all orders:', error);
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      errorDiv.textContent = '✗ Failed to delete all orders';
+      document.body.appendChild(errorDiv);
+      setTimeout(() => errorDiv.remove(), 3000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrderIds(prev =>
+      prev.includes(orderId)
+        ? prev.filter(id => id !== orderId)
+        : [...prev, orderId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOrderIds.length === filteredOrders.length) {
+      setSelectedOrderIds([]);
+    } else {
+      setSelectedOrderIds(filteredOrders.map(order => order._id));
+    }
+  };
+
+  // Review Management Functions
+  const fetchAllReviews = async (showRefreshMessage = false) => {
+    try {
+      if (showRefreshMessage) setIsRefreshing(true);
+      const response = await fetch('/api/reviews');
+      if (response.ok) {
+        const data = await response.json();
+        setReviews(data.reviews || []);
+        if (showRefreshMessage) {
+          const successDiv = document.createElement('div');
+          successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+          successDiv.textContent = '✓ Reviews refreshed successfully';
+          document.body.appendChild(successDiv);
+          setTimeout(() => successDiv.remove(), 3000);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch reviews:', error);
+      if (showRefreshMessage) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        errorDiv.textContent = '✗ Failed to refresh reviews';
+        document.body.appendChild(errorDiv);
+        setTimeout(() => errorDiv.remove(), 3000);
+      }
+    } finally {
+      if (showRefreshMessage) setIsRefreshing(false);
+    }
+  };
+
+  const deleteReview = async (reviewId: string) => {
+    if (!confirm('Are you sure you want to delete this review?')) return;
+
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setReviews(reviews.filter((review) => review._id !== reviewId));
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+        successDiv.textContent = '✓ Review deleted successfully';
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+      } else {
+        throw new Error('Failed to delete review');
+      }
+    } catch (error) {
+      console.error('Failed to delete review:', error);
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      errorDiv.textContent = '✗ Failed to delete review';
+      document.body.appendChild(errorDiv);
+      setTimeout(() => errorDiv.remove(), 3000);
+    }
+  };
+
+  const deleteSelectedReviews = async () => {
+    if (selectedReviewIds.length === 0) {
+      alert('Please select reviews to delete');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedReviewIds.length} review(s)?`)) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/reviews/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewIds: selectedReviewIds }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setReviews(reviews.filter((review) => !selectedReviewIds.includes(review._id)));
+        setSelectedReviewIds([]);
+        
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+        successDiv.textContent = `✓ ${data.deletedCount} review(s) deleted successfully`;
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+      } else {
+        throw new Error('Failed to delete reviews');
+      }
+    } catch (error) {
+      console.error('Failed to delete reviews:', error);
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      errorDiv.textContent = '✗ Failed to delete reviews';
+      document.body.appendChild(errorDiv);
+      setTimeout(() => errorDiv.remove(), 3000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const deleteAllReviews = async () => {
+    if (!confirm(`⚠️ WARNING: This will permanently delete ALL ${reviews.length} reviews! Are you absolutely sure?`)) return;
+    
+    if (!confirm('This action CANNOT be undone. Click OK to proceed')) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/reviews/bulk-delete', {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setReviews([]);
+        setSelectedReviewIds([]);
+        
+        const successDiv = document.createElement('div');
+        successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
+        successDiv.textContent = `✓ All ${data.deletedCount} reviews deleted successfully`;
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+      } else {
+        throw new Error('Failed to delete all reviews');
+      }
+    } catch (error) {
+      console.error('Failed to delete all reviews:', error);
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      errorDiv.textContent = '✗ Failed to delete all reviews';
+      document.body.appendChild(errorDiv);
+      setTimeout(() => errorDiv.remove(), 3000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const toggleReviewSelection = (reviewId: string) => {
+    setSelectedReviewIds(prev =>
+      prev.includes(reviewId)
+        ? prev.filter(id => id !== reviewId)
+        : [...prev, reviewId]
+    );
+  };
+
+  const toggleSelectAllReviews = () => {
+    if (selectedReviewIds.length === reviews.length) {
+      setSelectedReviewIds([]);
+    } else {
+      setSelectedReviewIds(reviews.map(review => review._id));
     }
   };
 
@@ -289,6 +564,25 @@ export default function AdminDashboard() {
             </div>
             <span className="bg-green-600 text-white px-2 py-1 rounded-full text-xs font-bold">
               {stats.completed}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('reviews')}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition ${
+              activeView === 'reviews'
+                ? 'bg-purple-500 text-gray-900 font-semibold'
+                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z" />
+              </svg>
+              Reviews
+            </div>
+            <span className="bg-purple-600 text-white px-2 py-1 rounded-full text-xs font-bold">
+              {reviews.length}
             </span>
           </button>
 
@@ -680,152 +974,216 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               className="bg-gray-800/50 border border-gray-700 rounded-xl p-6"
             >
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-cyan-500 flex items-center gap-3">
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z" />
-                  </svg>
-                  All Orders
-                </h2>
-                <div className="flex gap-4">
-                  <input
-                    type="text"
-                    placeholder="Search orders..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-                  />
-                  <select
-                    value={selectedStatus}
-                    onChange={(e) => setSelectedStatus(e.target.value as any)}
-                    className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="All">All Status</option>
-                    <option value="Pending">Pending</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
-                  </select>
+              <div className="flex flex-col gap-4 mb-6">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-cyan-500 flex items-center gap-3">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
+                    All Orders
+                  </h2>
+                  <div className="flex gap-4">
+                    <input
+                      type="text"
+                      placeholder="Search orders..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                    />
+                    <select
+                      value={selectedStatus}
+                      onChange={(e) => setSelectedStatus(e.target.value as any)}
+                      className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="All">All Status</option>
+                      <option value="Pending">Pending</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Completed">Completed</option>
+                    </select>
+                  </div>
                 </div>
+
+                {/* Bulk Actions */}
+                {filteredOrders.length > 0 && (
+                  <div className="flex items-center justify-between bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOrderIds.length === filteredOrders.length && filteredOrders.length > 0}
+                          onChange={toggleSelectAll}
+                          className="w-5 h-5 rounded border-gray-600 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-gray-900"
+                        />
+                        <span className="text-white font-semibold">
+                          {selectedOrderIds.length > 0
+                            ? `${selectedOrderIds.length} selected`
+                            : 'Select All'}
+                        </span>
+                      </label>
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      {selectedOrderIds.length > 0 && (
+                        <button
+                          onClick={deleteSelectedOrders}
+                          disabled={isDeleting}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 disabled:bg-red-700 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                          </svg>
+                          {isDeleting ? 'Deleting...' : `Delete Selected (${selectedOrderIds.length})`}
+                        </button>
+                      )}
+                      
+                      <button
+                        onClick={deleteAllOrders}
+                        disabled={isDeleting || orders.length === 0}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                        </svg>
+                        {isDeleting ? 'Deleting...' : 'Delete All Orders'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4">
                 {filteredOrders.map((order) => (
                   <div key={order._id} className="bg-gray-900/50 border border-gray-700 p-6 rounded-xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-xl font-bold text-cyan-500">{order.orderNumber}</h3>
-                        <p className="text-gray-400 text-sm flex items-center gap-2 mt-1">
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                          </svg>
-                          {new Date(order.createdAt).toLocaleString('en-US', {
-                            month: 'numeric',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                          })}
-                        </p>
+                    <div className="flex items-start gap-4">
+                      {/* Checkbox */}
+                      <div className="pt-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedOrderIds.includes(order._id)}
+                          onChange={() => toggleOrderSelection(order._id)}
+                          className="w-5 h-5 rounded border-gray-600 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-gray-900 cursor-pointer"
+                        />
                       </div>
-                      <span
-                        className={`px-4 py-2 rounded-full text-xs font-bold uppercase ${
-                          order.status === 'Completed'
-                            ? 'bg-green-500 text-gray-900'
-                            : order.status === 'In Progress'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-yellow-500 text-gray-900'
-                        }`}
-                      >
-                        {order.status}
-                      </span>
-                    </div>
 
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      <div>
-                        <p className="text-gray-500 text-xs mb-1">Client</p>
-                        <p className="text-white font-semibold">{order.clientName}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 text-xs mb-1">Email</p>
-                        <p className="text-white font-semibold text-sm">{order.clientEmail}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 text-xs mb-1">Package</p>
-                        <p className="text-white font-semibold">{order.packageType}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 text-xs mb-1">Amount</p>
-                        <p className="text-white font-bold text-lg">
-                          {order.currency} {order.totalAmount.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
+                      {/* Order Content */}
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-xl font-bold text-cyan-500">{order.orderNumber}</h3>
+                            <p className="text-gray-400 text-sm flex items-center gap-2 mt-1">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                              </svg>
+                              {new Date(order.createdAt).toLocaleString('en-US', {
+                                month: 'numeric',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true,
+                              })}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-4 py-2 rounded-full text-xs font-bold uppercase ${
+                              order.status === 'Completed'
+                                ? 'bg-green-500 text-gray-900'
+                                : order.status === 'In Progress'
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-yellow-500 text-gray-900'
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                        </div>
 
-                    {/* Additional Quick Info */}
-                    <div className="grid grid-cols-3 gap-3 mb-4 pb-4 border-b border-gray-700">
-                      {(order as any).colorScheme && (
-                        <div>
-                          <p className="text-gray-500 text-xs mb-1">🎨 Color Scheme</p>
-                          <p className="text-white font-semibold text-sm truncate">{(order as any).colorScheme}</p>
+                        <div className="grid grid-cols-4 gap-4 mb-4">
+                          <div>
+                            <p className="text-gray-500 text-xs mb-1">Client</p>
+                            <p className="text-white font-semibold">{order.clientName}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500 text-xs mb-1">Email</p>
+                            <p className="text-white font-semibold text-sm">{order.clientEmail}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500 text-xs mb-1">Package</p>
+                            <p className="text-white font-semibold">{order.packageType}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500 text-xs mb-1">Amount</p>
+                            <p className="text-white font-bold text-lg">
+                              {order.currency} {order.totalAmount.toLocaleString()}
+                            </p>
+                          </div>
                         </div>
-                      )}
-                      {(order as any).completionDate && (
-                        <div>
-                          <p className="text-gray-500 text-xs mb-1">📅 Deadline</p>
-                          <p className="text-white font-semibold text-sm">{(order as any).completionDate}</p>
-                        </div>
-                      )}
-                      {(order as any).budgetRange && (
-                        <div>
-                          <p className="text-gray-500 text-xs mb-1">💰 Budget</p>
-                          <p className="text-white font-semibold text-sm truncate">{(order as any).budgetRange}</p>
-                        </div>
-                      )}
-                    </div>
 
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={() => {
-                          setSelectedOrder(order);
-                          setIsDetailsOpen(true);
-                        }}
-                        className="flex-1 px-4 py-2 border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-gray-900 rounded-lg font-semibold transition flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-                        </svg>
-                        View Details
-                      </button>
-                      <button
-                        onClick={() => updateOrderStatus(order._id, 'In Progress')}
-                        disabled={order.status === 'In Progress' || order.status === 'Completed'}
-                        className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white disabled:text-gray-400 rounded-lg font-semibold transition flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M8 5v14l11-7z" />
-                        </svg>
-                        Start Project
-                      </button>
-                      <button
-                        onClick={() => updateOrderStatus(order._id, 'Completed')}
-                        disabled={order.status === 'Completed'}
-                        className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white disabled:text-gray-400 rounded-lg font-semibold transition flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" />
-                        </svg>
-                        Mark Complete
-                      </button>
-                      <button
-                        onClick={() => deleteOrder(order._id)}
-                        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-                        </svg>
-                        Delete
-                      </button>
+                        {/* Additional Quick Info */}
+                        <div className="grid grid-cols-3 gap-3 mb-4 pb-4 border-b border-gray-700">
+                          {(order as any).colorScheme && (
+                            <div>
+                              <p className="text-gray-500 text-xs mb-1">🎨 Color Scheme</p>
+                              <p className="text-white font-semibold text-sm truncate">{(order as any).colorScheme}</p>
+                            </div>
+                          )}
+                          {(order as any).completionDate && (
+                            <div>
+                              <p className="text-gray-500 text-xs mb-1">📅 Deadline</p>
+                              <p className="text-white font-semibold text-sm">{(order as any).completionDate}</p>
+                            </div>
+                          )}
+                          {(order as any).budgetRange && (
+                            <div>
+                              <p className="text-gray-500 text-xs mb-1">💰 Budget</p>
+                              <p className="text-white font-semibold text-sm truncate">{(order as any).budgetRange}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button 
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setIsDetailsOpen(true);
+                            }}
+                            className="flex-1 px-4 py-2 border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-gray-900 rounded-lg font-semibold transition flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                            </svg>
+                            View Details
+                          </button>
+                          <button
+                            onClick={() => updateOrderStatus(order._id, 'In Progress')}
+                            disabled={order.status === 'In Progress' || order.status === 'Completed'}
+                            className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white disabled:text-gray-400 rounded-lg font-semibold transition flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                            Start Project
+                          </button>
+                          <button
+                            onClick={() => updateOrderStatus(order._id, 'Completed')}
+                            disabled={order.status === 'Completed'}
+                            className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white disabled:text-gray-400 rounded-lg font-semibold transition flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" />
+                            </svg>
+                            Mark Complete
+                          </button>
+                          <button
+                            onClick={() => deleteOrder(order._id)}
+                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -833,6 +1191,175 @@ export default function AdminDashboard() {
                 {filteredOrders.length === 0 && (
                   <div className="text-center py-12 text-gray-400">
                     <p className="text-xl">No orders found</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Reviews View */}
+          {activeView === 'reviews' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gray-800/50 border border-gray-700 rounded-xl p-6"
+            >
+              <div className="flex flex-col gap-4 mb-6">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-purple-500 flex items-center gap-3">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z" />
+                    </svg>
+                    Customer Reviews ({reviews.length})
+                  </h2>
+                  <button
+                    onClick={() => fetchAllReviews(true)}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-purple-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition"
+                  >
+                    <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                    </svg>
+                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {/* Bulk Actions */}
+                {reviews.length > 0 && (
+                  <div className="flex items-center justify-between bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedReviewIds.length === reviews.length && reviews.length > 0}
+                          onChange={toggleSelectAllReviews}
+                          className="w-5 h-5 rounded border-gray-600 text-purple-500 focus:ring-purple-500 focus:ring-offset-gray-900"
+                        />
+                        <span className="text-white font-semibold">
+                          {selectedReviewIds.length > 0
+                            ? `${selectedReviewIds.length} selected`
+                            : 'Select All'}
+                        </span>
+                      </label>
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      {selectedReviewIds.length > 0 && (
+                        <button
+                          onClick={deleteSelectedReviews}
+                          disabled={isDeleting}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 disabled:bg-red-700 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                          </svg>
+                          {isDeleting ? 'Deleting...' : `Delete Selected (${selectedReviewIds.length})`}
+                        </button>
+                      )}
+                      
+                      <button
+                        onClick={deleteAllReviews}
+                        disabled={isDeleting || reviews.length === 0}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                        </svg>
+                        {isDeleting ? 'Deleting...' : 'Delete All Reviews'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                {reviews.map((review) => (
+                  <div key={review._id} className="bg-gray-900/50 border border-gray-700 p-6 rounded-xl">
+                    <div className="flex items-start gap-4">
+                      {/* Checkbox */}
+                      <div className="pt-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedReviewIds.includes(review._id)}
+                          onChange={() => toggleReviewSelection(review._id)}
+                          className="w-5 h-5 rounded border-gray-600 text-purple-500 focus:ring-purple-500 focus:ring-offset-gray-900 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Review Content */}
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex items-center gap-4">
+                            {review.user.profilePhoto ? (
+                              <img
+                                src={review.user.profilePhoto}
+                                alt={review.user.fullName}
+                                className="w-12 h-12 rounded-full border-2 border-purple-500"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-full bg-purple-500/20 border-2 border-purple-500 flex items-center justify-center">
+                                <span className="text-purple-500 font-bold text-lg">
+                                  {review.user.fullName.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <div>
+                              <h3 className="text-lg font-bold text-white">{review.user.fullName}</h3>
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="flex gap-1">
+                                  {[...Array(5)].map((_, i) => (
+                                    <svg
+                                      key={i}
+                                      className={`w-4 h-4 ${
+                                        i < review.rating ? 'text-yellow-500' : 'text-gray-600'
+                                      }`}
+                                      fill="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                                    </svg>
+                                  ))}
+                                </div>
+                                <span className="text-gray-400 text-sm">
+                                  {new Date(review.createdAt).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {review.comment && (
+                          <div className="mb-4">
+                            <p className="text-gray-300 text-sm leading-relaxed">{review.comment}</p>
+                          </div>
+                        )}
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => deleteReview(review._id)}
+                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                            </svg>
+                            Delete Review
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {reviews.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z" />
+                    </svg>
+                    <p className="text-xl">No reviews yet</p>
                   </div>
                 )}
               </div>
